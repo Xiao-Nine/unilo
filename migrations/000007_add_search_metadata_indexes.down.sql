@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_search_documents_message_channel_id;

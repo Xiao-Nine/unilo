@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS drop_comments;
+DROP TABLE IF EXISTS drop_likes;
+DROP TABLE IF EXISTS drops;

@@ -86,6 +86,20 @@ export const useSessionStore = defineStore('session', () => {
     persist()
   }
 
+  function expireAuth() {
+    clearAuth()
+  }
+
+  function resetServer() {
+    serverUrl.value = ''
+    apiBase.value = ''
+    serverName.value = ''
+    error.value = ''
+    clearAuth()
+    configureApi('', '')
+    persist()
+  }
+
   function syncApi() {
     if (serverUrl.value) {
       configureApi(serverUrl.value, accessToken.value)
@@ -200,6 +214,8 @@ export const useSessionStore = defineStore('session', () => {
     register,
     loadMe,
     logout,
+    expireAuth,
+    resetServer,
     syncApi,
   }
 })

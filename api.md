@@ -1166,6 +1166,32 @@ Server -> Client：
 
 ### 6.3 Server -> Client Events
 
+#### 发送消息确认
+
+客户端通过 WebSocket `send_message` 发送成功后，服务端会使用相同 `request_id` 返回 `message_sent`，发送端应以该事件作为清空输入框和插入真实消息的确认。
+
+```json
+{
+  "event": "message_sent",
+  "request_id": "uuid",
+  "data": {
+    "id": 1025,
+    "channel_id": "uuid",
+    "sender_id": "uuid",
+    "sender": {
+      "id": "uuid",
+      "nickname": "Feng",
+      "avatar_url": ""
+    },
+    "reply_to_id": null,
+    "msg_type": "text",
+    "content": "这是一条新消息",
+    "metadata": {},
+    "created_at": "2026-05-04T12:05:00Z"
+  }
+}
+```
+
 #### 新消息广播
 
 ```json

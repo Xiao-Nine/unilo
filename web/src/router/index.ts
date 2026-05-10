@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import SetupView from '../views/SetupView.vue'
 import AuthView from '../views/AuthView.vue'
 import AppShell from '../views/AppShell.vue'
+import { setUnauthorizedHandler } from '../api/client'
 import { useSessionStore } from '../stores/session'
 
 export const router = createRouter({
@@ -13,6 +14,14 @@ export const router = createRouter({
     { path: '/app', component: AppShell },
     { path: '/:pathMatch(.*)*', redirect: '/app' },
   ],
+})
+
+setUnauthorizedHandler(() => {
+  const session = useSessionStore()
+  session.expireAuth()
+  if (router.currentRoute.value.path !== '/login') {
+    void router.push('/login')
+  }
 })
 
 router.beforeEach(async (to) => {
@@ -28,6 +37,13 @@ router.beforeEach(async (to) => {
 
   if (session.accessToken && !session.user) {
     await session.loadMe()
+    if (!session.accessToken && to.path !== '/login') {
+      return '/login'
+    }
+  }
+
+  if (session.hasVerifiedServer && !session.accessToken && to.path !== '/login') {
+    return '/login'
   }
 
   if (to.path === '/setup' && session.hasVerifiedServer) {

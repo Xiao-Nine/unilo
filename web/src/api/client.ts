@@ -20,6 +20,7 @@ export type RequestOptions = {
 
 let activeServerUrl = ''
 let activeAccessToken = ''
+let unauthorizedHandler: (() => void) | null = null
 
 export function normalizeServerUrl(serverUrl: string) {
   return serverUrl.trim().replace(/\/+$/, '')
@@ -59,6 +60,10 @@ export function setAccessToken(accessToken: string) {
   activeAccessToken = accessToken
 }
 
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler
+}
+
 async function parseApiResponse<T>(response: Response) {
   let payload: ApiResponse<T> | null = null
   try {
@@ -68,7 +73,11 @@ async function parseApiResponse<T>(response: Response) {
   }
 
   if (!response.ok || payload.code !== 200) {
-    throw new ApiError({ code: payload.code, msg: payload.msg || '请求失败', status: response.status })
+    const error = new ApiError({ code: payload.code, msg: payload.msg || '请求失败', status: response.status })
+    if (response.status === 401) {
+      unauthorizedHandler?.()
+    }
+    throw error
   }
 
   return payload.data
@@ -111,6 +120,9 @@ export async function fetchAuthorizedBlob(pathOrUrl: string, token = activeAcces
   })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      unauthorizedHandler?.()
+    }
     throw new ApiError({ code: response.status, msg: '文件预览加载失败', status: response.status })
   }
 

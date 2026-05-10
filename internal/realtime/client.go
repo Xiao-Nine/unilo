@@ -112,7 +112,7 @@ func (c *Client) handleSendMessage(msg IncomingMessage) {
 		c.sendError(msg.RequestID, 400, "invalid payload")
 		return
 	}
-	_, err := c.hub.channels.CreateMessage(payload.ChannelID, c.userID, channel.CreateMessageRequest{
+	resp, err := c.hub.channels.CreateMessage(payload.ChannelID, c.userID, channel.CreateMessageRequest{
 		ReplyToID: payload.ReplyToID,
 		MsgType:   payload.MsgType,
 		Content:   payload.Content,
@@ -121,7 +121,9 @@ func (c *Client) handleSendMessage(msg IncomingMessage) {
 	if err != nil {
 		appErr := apperror.From(err)
 		c.sendError(msg.RequestID, appErr.Code, appErr.Message)
+		return
 	}
+	c.sendMessage(OutgoingMessage{Event: "message_sent", RequestID: msg.RequestID, Data: resp})
 }
 
 func (c *Client) handleInvokeAgent(msg IncomingMessage) {

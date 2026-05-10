@@ -9,6 +9,15 @@ type RealtimeCallbacks = {
 
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 15000]
 const HEARTBEAT_INTERVAL = 30000
+const ACK_TIMEOUT = 15000
+
+type PendingAck = {
+  event: string
+  resolve: (frame: WsServerFrame) => void
+  reject: (error: Error) => void
+  timer: number
+  matchesFrame?: (frame: WsServerFrame) => boolean
+}
 
 function requestId() {
   if ('crypto' in window && typeof window.crypto.randomUUID === 'function') {
@@ -26,6 +35,7 @@ export class RealtimeClient {
   private reconnectTimer: number | undefined
   private reconnectAttempt = 0
   private closedByUser = false
+  private pendingAcks = new Map<string, PendingAck>()
 
   constructor(serverUrl: string, accessToken: string, callbacks: RealtimeCallbacks) {
     this.serverUrl = serverUrl
@@ -41,6 +51,7 @@ export class RealtimeClient {
   disconnect() {
     this.closedByUser = true
     this.clearTimers()
+    this.rejectPendingAcks('实时连接已断开')
     this.socket?.close()
     this.socket = null
     this.callbacks.onStatusChange('disconnected')
@@ -60,6 +71,30 @@ export class RealtimeClient {
     return frameRequestId
   }
 
+  sendAndWait<TPayload>(
+    action: WsClientAction,
+    payload: TPayload,
+    event: string,
+    matchesFrame?: (frame: WsServerFrame) => boolean,
+  ) {
+    const frameRequestId = requestId()
+    const promise = new Promise<WsServerFrame>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        this.pendingAcks.delete(frameRequestId)
+        reject(new Error('实时消息确认超时'))
+      }, ACK_TIMEOUT)
+      this.pendingAcks.set(frameRequestId, { event, resolve, reject, timer, matchesFrame })
+    })
+
+    try {
+      this.send(action, payload, frameRequestId)
+    } catch (caught) {
+      this.clearPendingAck(frameRequestId)
+      throw caught
+    }
+    return promise
+  }
+
   private open(status: RealtimeStatus) {
     this.callbacks.onStatusChange(status)
     this.socket?.close()
@@ -73,7 +108,9 @@ export class RealtimeClient {
 
     this.socket.addEventListener('message', (event) => {
       try {
-        this.callbacks.onFrame(JSON.parse(event.data as string) as WsServerFrame)
+        const frame = JSON.parse(event.data as string) as WsServerFrame
+        this.resolvePendingAck(frame)
+        this.callbacks.onFrame(frame)
       } catch {
         this.callbacks.onError('实时消息解析失败')
       }
@@ -86,12 +123,58 @@ export class RealtimeClient {
 
     this.socket.addEventListener('close', () => {
       this.stopHeartbeat()
+      this.rejectPendingAcks('实时连接已断开')
       if (this.closedByUser) {
         this.callbacks.onStatusChange('disconnected')
         return
       }
       this.scheduleReconnect()
     })
+  }
+
+  private resolvePendingAck(frame: WsServerFrame) {
+    if (frame.request_id) {
+      const pending = this.pendingAcks.get(frame.request_id)
+      if (pending && (frame.event === pending.event || frame.event === 'error')) {
+        this.settlePendingAck(frame.request_id, pending, frame)
+        return
+      }
+    }
+
+    for (const [frameRequestId, pending] of this.pendingAcks) {
+      if (pending.matchesFrame?.(frame)) {
+        this.settlePendingAck(frameRequestId, pending, frame)
+        return
+      }
+    }
+  }
+
+  private settlePendingAck(frameRequestId: string, pending: PendingAck, frame: WsServerFrame) {
+    window.clearTimeout(pending.timer)
+    this.pendingAcks.delete(frameRequestId)
+    if (frame.event === 'error') {
+      const data = frame.data as { msg?: string }
+      pending.reject(new Error(data.msg || '实时消息发送失败'))
+      return
+    }
+    pending.resolve(frame)
+  }
+
+  private clearPendingAck(frameRequestId: string) {
+    const pending = this.pendingAcks.get(frameRequestId)
+    if (!pending) {
+      return
+    }
+    window.clearTimeout(pending.timer)
+    this.pendingAcks.delete(frameRequestId)
+  }
+
+  private rejectPendingAcks(message: string) {
+    for (const [frameRequestId, pending] of this.pendingAcks) {
+      window.clearTimeout(pending.timer)
+      pending.reject(new Error(message))
+      this.pendingAcks.delete(frameRequestId)
+    }
   }
 
   private startHeartbeat() {

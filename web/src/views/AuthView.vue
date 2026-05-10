@@ -11,6 +11,11 @@ const password = ref('')
 const nickname = ref('')
 const message = ref('')
 
+async function returnToSetup() {
+  session.resetServer()
+  await router.push('/setup')
+}
+
 async function submit() {
   message.value = ''
 
@@ -34,6 +39,7 @@ async function submit() {
 <template>
   <main class="auth-page">
     <section class="auth-card">
+      <button class="auth-close-button" type="button" aria-label="返回服务设置" @click="returnToSetup">×</button>
       <div class="eyebrow">{{ session.serverName || 'Unilo' }}</div>
       <h1>进入协作空间</h1>
       <p class="muted">当前服务：{{ session.serverUrl }}</p>
@@ -61,7 +67,6 @@ async function submit() {
         </button>
       </form>
 
-      <button class="ghost-button" type="button" @click="router.push('/setup')">更换服务地址</button>
       <p v-if="message || session.error" class="error-text">{{ message || session.error }}</p>
     </section>
   </main>

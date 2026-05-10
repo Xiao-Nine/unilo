@@ -19,6 +19,7 @@ import type {
 } from '../api/types'
 
 const TYPING_TTL_MS = 5000
+const CLIENT_MESSAGE_ID_KEY = '_client_message_id'
 
 type SendMessageOptions = {
   replyToId?: number | null
@@ -63,6 +64,13 @@ export const useChannelsStore = defineStore('channels', () => {
 
   function sortChannels(nextChannels: Channel[]) {
     return [...nextChannels].sort((a, b) => a.created_at.localeCompare(b.created_at))
+  }
+
+  function createClientMessageId() {
+    if ('crypto' in window && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID()
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   }
 
   function sortAndDedupeMessages(messages: Message[]) {
@@ -275,21 +283,26 @@ export const useChannelsStore = defineStore('channels', () => {
     }
   }
 
+  function handleIncomingMessage(message: Message, countUnread: boolean) {
+    const session = useSessionStore()
+    insertMessage(message)
+    patchChannel(message.channel_id, { last_message_id: message.id })
+    if (message.sender_id === session.user?.id) {
+      patchChannel(message.channel_id, { last_read_message_id: message.id, unread_count: 0 })
+      clearUnread(message.channel_id)
+    } else if (countUnread && message.channel_id !== selectedChannelId.value) {
+      incrementUnread(message.channel_id)
+    }
+  }
+
   function handleRealtimeFrame(frame: WsServerFrame) {
     switch (frame.event) {
-      case 'new_message': {
-        const message = frame.data as Message
-        const session = useSessionStore()
-        insertMessage(message)
-        patchChannel(message.channel_id, { last_message_id: message.id })
-        if (message.sender_id === session.user?.id) {
-          patchChannel(message.channel_id, { last_read_message_id: message.id, unread_count: 0 })
-          clearUnread(message.channel_id)
-        } else if (message.channel_id !== selectedChannelId.value) {
-          incrementUnread(message.channel_id)
-        }
+      case 'new_message':
+        handleIncomingMessage(frame.data as Message, true)
         break
-      }
+      case 'message_sent':
+        handleIncomingMessage(frame.data as Message, false)
+        break
       case 'channel_created':
       case 'channel_updated':
         upsertChannel(frame.data as Channel)
@@ -499,7 +512,26 @@ export const useChannelsStore = defineStore('channels', () => {
 
     try {
       if (realtimeClient && realtimeStatus.value === 'connected') {
-        realtimeClient.send('send_message', payload)
+        const session = useSessionStore()
+        const clientMessageId = createClientMessageId()
+        const realtimePayload = {
+          ...payload,
+          metadata: {
+            ...payload.metadata,
+            [CLIENT_MESSAGE_ID_KEY]: clientMessageId,
+          },
+        }
+        await realtimeClient.sendAndWait('send_message', realtimePayload, 'message_sent', (frame) => {
+          if (frame.event !== 'new_message') {
+            return false
+          }
+          const message = frame.data as Message
+          return (
+            message.channel_id === realtimePayload.channel_id &&
+            message.sender_id === session.user?.id &&
+            message.metadata?.[CLIENT_MESSAGE_ID_KEY] === clientMessageId
+          )
+        })
       } else {
         const message = await channelApi.createMessage(selectedChannelId.value, {
           reply_to_id: payload.reply_to_id,

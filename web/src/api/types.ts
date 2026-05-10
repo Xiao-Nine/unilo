@@ -86,6 +86,7 @@ export type WsClientAction = 'ping' | 'send_message' | 'typing' | 'invoke_agent'
 
 export type WsServerEvent =
   | 'new_message'
+  | 'message_sent'
   | 'channel_created'
   | 'channel_updated'
   | 'channel_deleted'
@@ -123,6 +124,43 @@ export type ChannelReadResponse = {
   unread_count: number
 }
 
+export type PaginatedResponse<T> = {
+  total: number
+  page: number
+  size: number
+  items: T[]
+}
+
+export type DropComment = {
+  id: string
+  drop_id: string
+  author_id: string
+  author: Pick<User, 'id' | 'nickname' | 'avatar_url'>
+  parent_id: string | null
+  reply_to_user_id: string | null
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export type Drop = {
+  id: string
+  author_id: string
+  author: Pick<User, 'id' | 'nickname' | 'avatar_url'>
+  content: string
+  like_count: number
+  comment_count: number
+  is_liked_by_me: boolean
+  comments?: DropComment[]
+  created_at: string
+  updated_at: string
+}
+
+export type DropLikeResponse = {
+  current_like_count: number
+  is_liked: boolean
+}
+
 export type WorkspaceFile = {
   id: string
   parent_id: string | null
@@ -137,6 +175,27 @@ export type WorkspaceFile = {
   download_url: string
   created_at: string
   updated_at: string
+}
+
+export type WorkspaceBreadcrumb = {
+  id: string
+  name: string
+}
+
+export type WorkspaceListResponse = {
+  breadcrumbs: WorkspaceBreadcrumb[]
+  files: WorkspaceFile[]
+}
+
+export type WorkspaceHashCheckResponse = {
+  exists: boolean
+  file_id: string | null
+  file: WorkspaceFile | null
+}
+
+export type DeleteWorkspaceFileResponse = {
+  deleted: boolean
+  trash_id: string
 }
 
 export type TypingStatusPayload = {
